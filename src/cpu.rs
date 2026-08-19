@@ -43,11 +43,11 @@ impl CPU {
         self.register_x = 0;
         self.status = 0;
 
-        self.program_counter = self.mem_read_u16(0xfffc)
+        self.program_counter = self.mem_read_u16(0xFFFC)
     }
     pub fn load(&mut self, program: Vec<u8>) {
         self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);  // load the entire program after 0x8000
-        self.mem_write_u16(0xffc, 0x8000); // save a reference to the start of the code in 0xffc
+        self.mem_write_u16(0xFFFC, 0x8000); // save a reference to the start of the code in 0xffc
     }
 
     pub fn load_and_run(&mut self, program: Vec<u8>) {
@@ -60,12 +60,12 @@ impl CPU {
         if result == 0 {
             self.status = self.status | 0b0000_0010;
         } else {
-            self.status = self.status | 0b1111_1101;
+            self.status = self.status & 0b1111_1101;
         }
         if result & 0b1000_0000 != 0 {
             self.status = self.status | 0b1000_0000;
         } else {
-            self.status = self.status | 0b0111_1111;
+            self.status = self.status & 0b0111_1111;
         }
     }
 
@@ -80,7 +80,7 @@ impl CPU {
     }
 
     fn inx(&mut self) {
-        self.register_x += 1;
+        self.register_x = self.register_x.wrapping_add(1);
         self.update_zero_and_negative_flags(self.register_x);
     }
 
@@ -130,7 +130,9 @@ mod test {
     #[test]
     fn test_0xaa_tax_move_a_to_x() {
         let mut cpu = CPU::new();
-        cpu.load_and_run(vec![0xaa, 0x00]);
+        // put 10 in reg a then copy to reg x
+        cpu.load_and_run(vec![0xa9, 0x0a, 0xaa, 0x00]);
+        // set register a to 10
 
         assert_eq!(cpu.register_x, 10);
     }
@@ -145,8 +147,9 @@ mod test {
     #[test]
     fn test_inx_overflow() {
         let mut cpu = CPU::new();
-        cpu.register_x = 0xff;
-        cpu.load_and_run(vec![0xe8, 0xe8, 0x00]);
+        // cpu.register_x = 0xff;
+        // everything resets when running load and run
+        cpu.load_and_run(vec![0xa9, 0xff, 0xaa, 0xe8, 0xe8, 0x00]);
 
         assert_eq!(cpu.register_x, 1)
     }
