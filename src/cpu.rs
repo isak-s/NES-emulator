@@ -1,9 +1,12 @@
+use super::addressing_modes::AddressingMode;
+
 pub struct CPU {
     pub register_a: u8,
     pub register_x: u8,
+    pub register_y: u8,
     pub status: u8,
     pub program_counter: u16,
-    memory: [u8; 0xFFFF],
+    memory: [u8; 0x10000], // FFFF
 }
 
 impl CPU {
@@ -11,9 +14,66 @@ impl CPU {
         CPU {
             register_a: 0,
             register_x: 0,
+            register_y: 0,
             status: 0,
             program_counter: 0,
-            memory: [0; 0xFFFF],
+            memory: [0; 0x10000], // FFFF
+        }
+    }
+    // should self be mut?
+    fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
+        match mode {
+            AddressingMode::Immediate => self.program_counter,
+            // treats last bit as a sign bit
+            AddressingMode::ZeroPage => self.mem_read(self.program_counter) as u16,
+            // does not treat last bit as sign bit
+            AddressingMode::Absolute => self.mem_read_u16(self.program_counter),
+
+            AddressingMode::ZeroPage_X => {
+                let pos = self.mem_read(self.program_counter);
+                let addr = pos.wrapping_add(self.register_x) as u16;
+                addr
+            }
+
+            AddressingMode::ZeroPage_Y => {
+                let pos = self.mem_read(self.program_counter);
+                let addr = pos.wrapping_add(self.register_y) as u16;
+                addr
+            }
+
+            AddressingMode::Absolute_X => {
+                let base = self.mem_read_u16(self.program_counter);
+                let addr = base.wrapping_add(self.register_x as u16);
+                addr
+            }
+
+            AddressingMode::Absolute_Y => {
+                let base = self.mem_read_u16(self.program_counter);
+                let addr = base.wrapping_add(self.register_y as u16);
+                addr
+            }
+
+            AddressingMode::Indirect_X => {
+                let base = self.mem_read(self.program_counter);
+                let ptr: u8 = (base as u8).wrapping_add(self.register_x);
+                let lo = self.mem_read(ptr as u16);
+                let hi = self.mem_read(ptr.wrapping_add(1) as u16);
+                (hi as u16) << 8 | (lo as u16)
+            }
+
+            AddressingMode::Indirect_Y => {
+                let base = self.mem_read(self.program_counter);
+                let lo = self.mem_read(base as u16);
+                let hi = self.mem_read(base.wrapping_add(1) as u16);
+                let deref_base = (hi as u16) | (lo as u16);
+                let deref = deref_base.wrapping_add(self.register_y as u16);
+                deref
+            }
+
+
+            AddressingMode::NoneAddressing => {
+                panic!("mode {:?} is not supported", mode)
+            }
         }
     }
 
@@ -25,7 +85,8 @@ impl CPU {
         self.memory[addr as usize] = data;
     }
     // the nes cpu uses little endian addressing. [lower 8 bits : higher 8 bits]
-    fn mem_read_u16(&mut self, pos: u16) -> u16 {
+    // make self mut later
+    fn mem_read_u16(&self, pos: u16) -> u16 {
         let lo = self.mem_read(pos) as u16;
         let hi = self.mem_read(pos + 1) as u16;
         (hi << 8) | lo
@@ -69,7 +130,10 @@ impl CPU {
         }
     }
 
-    fn lda(&mut self, value: u8) {
+    fn lda(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
         self.register_a = value;
         self.update_zero_and_negative_flags(self.register_a);
     }
@@ -84,6 +148,11 @@ impl CPU {
         self.update_zero_and_negative_flags(self.register_x);
     }
 
+    fn sta(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self.mem_write(addr, self.register_a);
+    }
+
     //pub fn interpret(&mut self, program: Vec<u8>) {}
 
     pub fn run(&mut self) {
@@ -93,12 +162,27 @@ impl CPU {
 
             match opcode {
                 0xA9 => {
-                    let param = self.memory[self.program_counter as usize];
+                    self.lda(&AddressingMode::Immediate);
                     self.program_counter += 1;
-                    self.lda(param)
                 }
+                0xA5 => {
+                    self.lda(&AddressingMode::ZeroPage);
+                    self.program_counter += 1;
+                }
+                0xAD => {
+                    self.lda(&AddressingMode::Absolute);
+                    self.program_counter += 2;
+                }
+
+                0x85 => {
+                    self.sta(&AddressingMode::ZeroPage);
+                    self.program_counter += 1;
+                }
+
                 0xAA => self.tax(),
+
                 0xE8 => self.inx(),
+
                 0x00 => return,
 
                 _ => todo!(),
@@ -153,4 +237,13 @@ mod test {
 
         assert_eq!(cpu.register_x, 1)
     }
+   #[test]
+   fn test_lda_from_memory() {
+       let mut cpu = CPU::new();
+       cpu.mem_write(0x10, 0x55);
+
+       cpu.load_and_run(vec![0xa5, 0x10, 0x00]);
+
+       assert_eq!(cpu.register_a, 0x55);
+   }
 }

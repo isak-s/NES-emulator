@@ -1,4 +1,5 @@
 mod cpu;
+mod addressing_modes;
 
 use cpu::CPU;
 
