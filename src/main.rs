@@ -9,6 +9,7 @@ fn main() {
 
     let mut cpu = CPU::new();
     println!("content in reg a is {}", cpu.register_a);
-    cpu.interpret(program); 
+    // cpu.interpret(program);
+    cpu.load_and_run(program);
     println!("content in reg a is {}", cpu.register_a);
 }
