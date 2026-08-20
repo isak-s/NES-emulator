@@ -179,7 +179,7 @@ impl CPU {
             let pc_state_before_inst_execution = self.program_counter;
 
             match code {
-                0xA9 | 0xA5 | 0xAD => {
+                0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 => {
                     self.lda(&op_code.addressing_mode);
                 }
 
@@ -259,4 +259,7 @@ mod test {
 
        assert_eq!(cpu.register_a, 0x55);
    }
+
+   // test all addressing modes for lda
+
 }
