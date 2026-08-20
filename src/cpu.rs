@@ -1,5 +1,15 @@
+use crate::op_codes;
 use super::addressing_modes::AddressingMode;
 
+    /// # Status Register https://www.nesdev.org/wiki/Status_flags
+    ///  7 N --- Negative Flag
+    ///  6 V --- Overflow Flag
+    ///  5 _ --- Nothing
+    ///  4 B --- Break command
+    ///  3 D --- Decimal mode (Not used on NES)
+    ///  2 I --- Interrupt Disable
+    ///  1 Z --- Zero Flag
+    ///  0 C --- Carry Flag
 pub struct CPU {
     pub register_a: u8,
     pub register_x: u8,
@@ -156,27 +166,25 @@ impl CPU {
     //pub fn interpret(&mut self, program: Vec<u8>) {}
 
     pub fn run(&mut self) {
+        let ref opcodes = *op_codes::CPU_CODES_MAP;
         loop {
-            let opcode = self.memory[self.program_counter as usize];
-            self.program_counter += 1;
+            let code = self.memory[self.program_counter as usize];
 
-            match opcode {
-                0xA9 => {
-                    self.lda(&AddressingMode::Immediate);
-                    self.program_counter += 1;
-                }
-                0xA5 => {
-                    self.lda(&AddressingMode::ZeroPage);
-                    self.program_counter += 1;
-                }
-                0xAD => {
-                    self.lda(&AddressingMode::Absolute);
-                    self.program_counter += 2;
+            let op_code = opcodes
+                .get(&code)
+                .expect(&format!("Opcode {:x} not recognized!", code));
+
+            println!("running inst {} with opcode {:x}", &op_code.name, code);
+            self.program_counter += 1;
+            let pc_state_before_inst_execution = self.program_counter;
+
+            match code {
+                0xA9 | 0xA5 | 0xAD => {
+                    self.lda(&op_code.addressing_mode);
                 }
 
                 0x85 => {
-                    self.sta(&AddressingMode::ZeroPage);
-                    self.program_counter += 1;
+                    self.sta(&op_code.addressing_mode);
                 }
 
                 0xAA => self.tax(),
@@ -187,6 +195,11 @@ impl CPU {
 
                 _ => todo!(),
             }
+            println!("{}", self.program_counter);
+            if pc_state_before_inst_execution == self.program_counter {
+                self.program_counter += (op_code.bytes - 1) as u16
+            }
+            println!("{}", self.program_counter);
         }
     }
 }
