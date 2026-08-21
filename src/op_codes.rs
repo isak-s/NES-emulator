@@ -35,7 +35,7 @@ lazy_static!(
     OpCode::new(0xBD, "LDA", 3, 4, AddressingMode::Absolute_X), // +1 if page crossed
     OpCode::new(0xB9, "LDA", 3, 4, AddressingMode::Absolute_Y), // +1 if page crossed
     OpCode::new(0xA1, "LDA", 2, 6, AddressingMode::Indirect_X),
-    OpCode::new(0x00, "LDA", 2, 5, AddressingMode::Indirect_Y), // +1 if page crossed
+    OpCode::new(0xB1, "LDA", 2, 5, AddressingMode::Indirect_Y), // +1 if page crossed
     // END Loads
 
     // Begin Stores
@@ -45,6 +45,17 @@ lazy_static!(
 
     // BEGIN Arithmetic
     OpCode::new(0xE8, "INX", 1, 2, AddressingMode::NoneAddressing),
+
+    OpCode::new(0x29, "AND", 2, 2, AddressingMode::Immediate),
+    OpCode::new(0x25, "AND", 2, 3, AddressingMode::ZeroPage),
+    OpCode::new(0x35, "AND", 2, 4, AddressingMode::ZeroPage_X),
+    OpCode::new(0x2D, "AND", 3, 4, AddressingMode::Absolute),
+    OpCode::new(0x3D, "AND", 3, 4, AddressingMode::Absolute_X),
+    OpCode::new(0x39, "AND", 3, 4, AddressingMode::Absolute_Y),
+    OpCode::new(0x21, "AND", 2, 6, AddressingMode::Indirect_X),
+    OpCode::new(0x31, "AND", 2, 5, AddressingMode::Indirect_Y),
+    // todo adc
+
     // END Arithmetic
     ];
 

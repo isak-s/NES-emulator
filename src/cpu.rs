@@ -140,22 +140,33 @@ impl CPU {
         }
     }
 
+    fn set_register_a(&mut self, new_val: u8) {
+        self.register_a = new_val;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+    fn set_register_x(&mut self, new_val: u8) {
+        self.register_x = new_val;
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
     fn lda(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-
-        self.register_a = value;
-        self.update_zero_and_negative_flags(self.register_a);
+        self.set_register_a(value);
     }
 
     fn tax(&mut self) {
-        self.register_x = self.register_a;
-        self.update_zero_and_negative_flags(self.register_x);
+        self.set_register_x(self.register_a);
     }
 
     fn inx(&mut self) {
-        self.register_x = self.register_x.wrapping_add(1);
-        self.update_zero_and_negative_flags(self.register_x);
+        self.set_register_x(self.register_x.wrapping_add(1));
+    }
+
+    fn and(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let operand = self.mem_read(addr);
+        self.set_register_a(self.register_a & operand);
     }
 
     fn sta(&mut self, mode: &AddressingMode) {
@@ -181,6 +192,9 @@ impl CPU {
             match code {
                 0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 => {
                     self.lda(&op_code.addressing_mode);
+                }
+                0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 => {
+                    self.and(&op_code.addressing_mode);
                 }
 
                 0x85 => {
@@ -260,6 +274,28 @@ mod test {
        assert_eq!(cpu.register_a, 0x55);
    }
 
-   // test all addressing modes for lda
+   // todo test all addressing modes for lda
 
+   #[test]
+   fn test_and_immediate_with_all_zeroes() {
+    let mut cpu = CPU::new();
+    cpu.load_and_run(vec![0x29, 0x00]);
+    assert_eq!(cpu.register_a, 0x00);
+    assert_eq!(cpu.status, 0b0000_0010);
+   }
+
+   #[test]
+   fn test_and_immediate_all_ones() {
+    let mut cpu = CPU::new();
+    cpu.load_and_run(vec![0xa9, 0b1111_1111, 0x29, 0b1111_1111, 0x00]);
+    assert_eq!(cpu.register_a, 0b1111_1111);
+    assert_eq!(cpu.status, 0b1000_0000);
+   }
+    #[test]
+   fn test_and_immediate_alternating_bits() {
+    let mut cpu = CPU::new();
+    cpu.load_and_run(vec![0xa9, 0b0101_0101, 0x29, 0b1010_1010, 0x00]);
+    assert_eq!(cpu.register_a, 0b0000_0000);
+    assert_eq!(cpu.status, 0b0000_0010);
+   }
 }
