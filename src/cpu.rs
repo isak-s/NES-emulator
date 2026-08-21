@@ -169,6 +169,13 @@ impl CPU {
         self.set_register_a(self.register_a & operand);
     }
 
+    fn asl(&mut self, mode: &AddressingMode) {
+        // arithmetic shift left
+        let addr = self.get_operand_address(mode);
+        let shift_amnt = self.mem_read(addr);
+        self.set_register_a(self.register_a << shift_amnt);
+    }
+
     fn sta(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         self.mem_write(addr, self.register_a);
@@ -195,6 +202,9 @@ impl CPU {
                 }
                 0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 => {
                     self.and(&op_code.addressing_mode);
+                }
+                0x0a | 0x06 | 0x16 | 0x0e | 0x1e => {
+                    self.asl(&op_code.addressing_mode);
                 }
 
                 0x85 => {
@@ -297,5 +307,13 @@ mod test {
     cpu.load_and_run(vec![0xa9, 0b0101_0101, 0x29, 0b1010_1010, 0x00]);
     assert_eq!(cpu.register_a, 0b0000_0000);
     assert_eq!(cpu.status, 0b0000_0010);
+   }
+   #[test]
+   fn test_asl_zero_page_one_bit() {
+    let mut cpu = CPU::new();
+    // put 5 in register a, store in memory, use as zero page for shift
+    cpu.load_and_run(vec![0xa9, 0b0000_0001, 0x85, 0x00, 0x06, 0x00, 0x00]);
+    assert_eq!(cpu.register_a, 0b0000_0010);
+    assert_eq!(cpu.status, 0b0000_0000);
    }
 }
