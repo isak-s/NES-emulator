@@ -379,6 +379,84 @@ impl CPU {
         self.set_register_y(value);
     }
 
+    fn lsr(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        let stat_mask = value & CpuFlags::CARRY_FLAG;
+        self.status = (self.status & !CpuFlags::CARRY_FLAG) | stat_mask;
+
+        self.mem_write(addr, value >> 1);
+    }
+
+    fn lsr_accumulator(&mut self) {
+        let stat_mask = self.register_a & CpuFlags::CARRY_FLAG;
+        self.status = (self.status & !CpuFlags::CARRY_FLAG) | stat_mask;
+        self.set_register_a(self.register_a >> 1);
+    }
+
+    fn nop(&mut self) {
+        // no operation
+    }
+
+    fn ora(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let mask = self.mem_read(addr);
+        self.set_register_a(self.register_a | mask);
+    }
+
+    fn pha(&mut self) {
+        // push accumulator to stack
+    }
+
+    fn php(&mut self) {}
+
+    fn pla(&mut self) {}
+
+    fn plp(&mut self) {}
+
+    fn rol(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let operand = self.mem_read(addr);
+
+        let bit_7 = operand & 0b1000_0000;
+        let shifted = operand << 1;
+        let carry_inserted = shifted | (self.status & CpuFlags::CARRY_FLAG);
+
+        self.mem_write(addr, carry_inserted);
+        self.status = (self.status & !CpuFlags::CARRY_FLAG) | (bit_7 >> 7)
+    }
+
+    fn rol_accumulator(&mut self) {
+        let bit_7 = self.register_a & 0b1000_0000;
+        let shifted = self.register_a << 1;
+        let carry_inserted = shifted | (self.status & CpuFlags::CARRY_FLAG);
+
+        self.set_register_a(carry_inserted);
+        self.status = (self.status & !CpuFlags::CARRY_FLAG) | (bit_7 >> 7)
+    }
+
+    fn ror(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let operand = self.mem_read(addr);
+
+        let bit_0 = operand & 0b0000_0001;
+        let shifted = operand >> 1;
+        let carry_inserted = shifted | ((self.status & CpuFlags::CARRY_FLAG) << 7);
+
+        self.status = (self.status & !CpuFlags::CARRY_FLAG) | bit_0;
+        self.mem_write(addr, carry_inserted);
+    }
+
+    fn ror_accumulator(&mut self) {
+        let bit_0 = self.register_a & 0b0000_0001;
+        let shifted = self.register_a >> 1;
+        let carry_inserted = shifted | ((self.status & CpuFlags::CARRY_FLAG) << 7);
+
+        self.status = (self.status & !CpuFlags::CARRY_FLAG) | bit_0;
+        self.set_register_a(carry_inserted);
+    }
+
     pub fn run(&mut self) {
         let ref opcodes = *op_codes::CPU_CODES_MAP;
         loop {
@@ -470,8 +548,38 @@ impl CPU {
                     self.ldy(&op_code.addressing_mode);
                 }
 
+                0x46 | 0x56 | 0x4E | 0x5E => {
+                    self.lsr(&op_code.addressing_mode)
+                },
+
+                0x4A => self.lsr_accumulator(),
+
+                0x09 | 0x05 | 0x15 | 0x0D | 0x1D | 0x19 | 0x01 | 0x11 => {
+                    self.ora(&op_code.addressing_mode)
+                }
+
+                0x48 => self.pha(),
+
+                0x08 => self.php(),
+
+                0x68 => self.pla(),
+
+                0x28 => self.plp(),
 
                 0xAA => self.tax(),
+
+                0x2A => self.rol_accumulator(),
+
+                0x26 | 0x36 | 0x2E | 0x3E => self.rol(&op_code.addressing_mode),
+
+                0x6A => self.ror_accumulator(),
+
+                0x66 | 0x76 | 0x6E | 0x7E => {
+                    self.ror(&op_code.addressing_mode);
+                }
+
+                // fuck EA sports. Do nothing
+                0xEA => self.nop(),
 
                 // brk force interrupt
                 0x00 => return,
