@@ -181,6 +181,21 @@ impl CPU {
         self.set_register_a(self.register_a & operand);
     }
 
+    fn branch(&mut self, condition: bool) {
+        if condition {
+            // relative can be both pos and neg. Treat as signed!!!
+            let relative = self.mem_read(self.program_counter) as i8;
+            let jump_addr = self.program_counter
+                .wrapping_add(1)
+                .wrapping_add(relative as u16);
+            self.program_counter = jump_addr;
+        }
+    }
+
+    fn bcc(&mut self) {
+        self.branch(self.status & CpuFlags::CARRY_FLAG == 0);
+    }
+
     fn asl(&mut self, mode: &AddressingMode) {
         // arithmetic shift left
         if self.register_a & CpuFlags::NEGATIVE != 0 { // if bit 7 is set
@@ -239,6 +254,8 @@ impl CPU {
                 0x85 => {
                     self.sta(&op_code.addressing_mode);
                 }
+
+                0x90 => self.bcc(),
 
                 0xAA => self.tax(),
 
@@ -363,5 +380,12 @@ mod test {
     let mut cpu = CPU::new();
     cpu.load_and_run(vec![0xa9, 0b1000_0001, 0x0A, 0x0A, 0x00]);
     assert_eq!(cpu.status, 0b0000_0000);
+   }
+
+   #[test]
+   fn test_bcc_carry_is_clear_jump_to_exit_skipping_instructions() {
+    let mut cpu = CPU::new();
+    cpu.load_and_run(vec![0x90, 2, 0xa9, 0b0000_0001, 0x00]);
+    assert_eq!(cpu.register_a, 0b0000_0000);
    }
 }

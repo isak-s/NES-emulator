@@ -58,11 +58,15 @@ lazy_static!(
     OpCode::new(0x06, "ASL", 2, 5, AddressingMode::ZeroPage),
     OpCode::new(0x16, "ASL", 2, 6, AddressingMode::ZeroPage_X),
     OpCode::new(0x0e, "ASL", 3, 6, AddressingMode::Absolute),
-    OpCode::new(0x1e, "ASL", 3, 7, AddressingMode::Absolute_X)
+    OpCode::new(0x1e, "ASL", 3, 7, AddressingMode::Absolute_X),
 
 
     // todo adc
     // END Arithmetic
+
+    // BEGIN BRANCHES
+    OpCode::new(0x90, "BCC", 2, 2, AddressingMode::NoneAddressing), // relative
+    // END BRANCHES
     ];
 
     pub static ref CPU_CODES_MAP: HashMap<u8, &'static OpCode> = {
