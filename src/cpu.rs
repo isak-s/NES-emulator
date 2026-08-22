@@ -160,20 +160,17 @@ impl CPU {
         self.register_x = new_val;
         self.update_zero_and_negative_flags(self.register_x);
     }
-
-    fn lda(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
-        let value = self.mem_read(addr);
-        self.set_register_a(value);
+    fn set_register_y(&mut self, new_val: u8) {
+        self.register_y = new_val;
+        self.update_zero_and_negative_flags(self.register_y);
     }
+
 
     fn tax(&mut self) {
         self.set_register_x(self.register_a);
     }
 
-    fn inx(&mut self) {
-        self.set_register_x(self.register_x.wrapping_add(1));
-    }
+
 
     fn sta(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
@@ -284,15 +281,102 @@ impl CPU {
         self.status &= !CpuFlags::OVERFLOW;
     }
 
-    fn cmp(&mut self, mode:&AddressingMode) {
+    fn _cmp(&mut self, mode: &AddressingMode, register: u8) {
         let addr = self.get_operand_address(mode);
         let operand = self.mem_read(addr);
         // accumulator - operand
-        let accumulator = 0b00000000;
-        let res = accumulator - operand;
+        let res = register - operand;
         let stat_mask = res & 0b1000_0011;
         self.status = (self.status & 0b0111_1100) | stat_mask;
+    }
 
+    fn cmp(&mut self, mode:&AddressingMode) {
+        self._cmp(mode, self.register_a);
+    }
+
+    fn cpx(&mut self, mode: &AddressingMode) {
+        self._cmp(mode, self.register_x);
+    }
+
+    fn cpy(&mut self, mode: &AddressingMode) {
+        self._cmp(mode, self.register_y);
+    }
+
+    fn dec(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let operand = self.mem_read(addr);
+        let res = operand.wrapping_sub(1);
+        self.mem_write(addr, res);
+        self.update_zero_and_negative_flags(res);
+    }
+
+    fn dex(&mut self) {
+        self.set_register_x(self.register_x.wrapping_sub(1));
+    }
+
+    fn dey(&mut self) {
+        self.set_register_y(self.register_y.wrapping_sub(1));
+    }
+
+    fn eor(&mut self, mode: &AddressingMode) {
+        // This is xor. In the specification its called eor for some reason
+        let addr = self.get_operand_address(mode);
+        let operand = self.mem_read(addr);
+
+        self.set_register_a(self.register_a ^ operand);
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+
+    fn inc(&mut self, mode: &AddressingMode) {
+        // possibly make helper function modify_memory_content that applies a function passed in
+        let addr = self.get_operand_address(mode);
+        let operand = self.mem_read(addr);
+        let res = operand.wrapping_add(1);
+        self.mem_write(addr, res);
+        self.update_zero_and_negative_flags(res);
+    }
+
+    fn inx(&mut self) {
+        self.set_register_x(self.register_x.wrapping_add(1));
+    }
+
+    fn iny(&mut self) {
+        self.set_register_y(self.register_y.wrapping_add(1));
+    }
+
+    fn jmp(&mut self, mode: &AddressingMode) {
+        // An original 6502 has does not correctly fetch the target address if the indirect vector falls on a page boundary
+        // this bug is not recreated
+        let addr = self.get_operand_address(mode);
+        let destination = self.mem_read_u16(addr); // u16 since this is not relative. Just address
+        self.program_counter = destination;
+    }
+
+    fn jsr(&mut self) {
+        // jump to subroutine (function). Pushes the address (minus one) of the return point to the stack.
+        // TODO!!! push return address
+        let addr = self.get_operand_address(&AddressingMode::Absolute);
+        let destination = self.mem_read_u16(addr); // u16 since this is not relative. Just address
+        self.program_counter = destination;
+    }
+
+    fn lda(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        self.set_register_a(value);
+    }
+
+    fn ldx(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        self.set_register_x(value);
+    }
+
+    fn ldy(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        self.set_register_y(value);
     }
 
     pub fn run(&mut self) {
@@ -309,22 +393,16 @@ impl CPU {
             let pc_state_before_inst_execution = self.program_counter;
 
             match code {
-                0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 => {
-                    self.lda(&op_code.addressing_mode);
-                }
+
                 0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 => {
                     self.and(&op_code.addressing_mode);
                 }
                 0x06 | 0x16 | 0x0e | 0x1e => {
                     self.asl(&op_code.addressing_mode);
                 }
-                0x0A => {
-                    self.asl_accumulator();
-                }
+                0x0A => self.asl_accumulator(),
 
-                0x85 => {
-                    self.sta(&op_code.addressing_mode);
-                }
+                0x85 => self.sta(&op_code.addressing_mode),
 
                 0x90 => self.bcc(),
 
@@ -356,9 +434,44 @@ impl CPU {
                     self.cmp(&op_code.addressing_mode);
                 },
 
-                0xAA => self.tax(),
+                0xE0 | 0xE4 | 0xEC => self.cpx(&op_code.addressing_mode),
+
+                0xC0 | 0xC4 | 0xCC => self.cpy(&op_code.addressing_mode),
+
+                0xC6 | 0xD6 | 0xCE | 0xDE => self.dec(&op_code.addressing_mode),
+
+                0xCA => self.dex(),
+
+                0x88 => self.dey(),
+
+                0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 | 0x41 | 0x51 => {
+                    self.eor(&op_code.addressing_mode);
+                },
+
+                0xE6 | 0xF6 | 0xEE | 0xFE => self.inc(&op_code.addressing_mode),
 
                 0xE8 => self.inx(),
+
+                0xC8 => self.iny(),
+
+                0x4C | 0x6C => self.jmp(&op_code.addressing_mode),
+
+                0x20 => self.jsr(),  // todo
+
+                0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 => {
+                    self.lda(&op_code.addressing_mode);
+                }
+
+                0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE => {
+                    self.ldx(&op_code.addressing_mode)
+                }
+
+                0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC => {
+                    self.ldy(&op_code.addressing_mode);
+                }
+
+
+                0xAA => self.tax(),
 
                 // brk force interrupt
                 0x00 => return,
