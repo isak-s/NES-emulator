@@ -23,7 +23,7 @@ impl CpuFlags {
 }
 
 pub struct CPU {
-    pub register_a: u8,
+    pub register_a: u8, // also called accumulator
     pub register_x: u8,
     pub register_y: u8,
     pub status: u8,
@@ -175,10 +175,40 @@ impl CPU {
         self.set_register_x(self.register_x.wrapping_add(1));
     }
 
+    fn sta(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self.mem_write(addr, self.register_a);
+    }
+
     fn and(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let operand = self.mem_read(addr);
         self.set_register_a(self.register_a & operand);
+    }
+
+    fn asl(&mut self, mode: &AddressingMode) {
+        // arithmetic shift left one bit
+        let addr = self.get_operand_address(mode);
+        let data = self.mem_read(addr);
+        if data & CpuFlags::NEGATIVE != 0 { // if bit 7 is set
+            self.status = self.status | CpuFlags::CARRY_FLAG;
+        } else {
+            self.status = self.status & !CpuFlags::CARRY_FLAG;
+        }
+
+        let res = data << 1;
+
+        self.mem_write(addr, res);
+        self.update_zero_and_negative_flags(res);
+    }
+
+    fn asl_accumulator(&mut self) {
+        if self.register_a & CpuFlags::NEGATIVE != 0 { // if bit 7 is set
+            self.status = self.status | CpuFlags::CARRY_FLAG;
+        } else {
+            self.status = self.status & !CpuFlags::CARRY_FLAG;
+        }
+        self.set_register_a(self.register_a << 1);
     }
 
     fn branch(&mut self, condition: bool) {
@@ -196,33 +226,74 @@ impl CPU {
         self.branch(self.status & CpuFlags::CARRY_FLAG == 0);
     }
 
-    fn asl(&mut self, mode: &AddressingMode) {
-        // arithmetic shift left
-        if self.register_a & CpuFlags::NEGATIVE != 0 { // if bit 7 is set
-            self.status = self.status | CpuFlags::CARRY_FLAG;
-        } else {
-            self.status = self.status & CpuFlags::CARRY_FLAG.reverse_bits();
-        }
+    fn bcs(&mut self) {
+        self.branch(self.status & CpuFlags::CARRY_FLAG != 0);
+    }
+
+    fn beq(&mut self) {
+        // use CMP instruction before, and then branch based on status
+        self.branch(self.status & CpuFlags::ZERO_FLAG != 0);
+    }
+    fn bit(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
-        let shift_amnt = self.mem_read(addr);
-        self.set_register_a(self.register_a << shift_amnt);
-    }
+        let operand = self.mem_read(addr);
 
-    fn asl_accumulator(&mut self) {
-        if self.register_a & CpuFlags::NEGATIVE != 0 { // if bit 7 is set
-            self.status = self.status | CpuFlags::CARRY_FLAG;
-        } else {
-            self.status = self.status & CpuFlags::CARRY_FLAG.reverse_bits();
+        let res = self.register_a & operand;
+        if res == 0 {
+            self.status &= CpuFlags::ZERO_FLAG;
         }
-        self.set_register_a(self.register_a << 1);
+        // negative and overflow bits
+        let stat_mask = res & 0b1100_0000;
+        self.status = (self.status & 0b0011_1111) | stat_mask
     }
 
-    fn sta(&mut self, mode: &AddressingMode) {
+    fn bmi(&mut self) {
+        self.branch(self.status & CpuFlags::NEGATIVE != 0);
+    }
+
+    fn bne(&mut self) {
+        // use cmp instruction before
+        self.branch(self.status & CpuFlags::ZERO_FLAG == 0);
+    }
+
+    fn bpl(&mut self) {
+        self.branch(self.status & CpuFlags::NEGATIVE == 0);
+    }
+
+    fn bvc(&mut self) {
+        self.branch(self.status & CpuFlags::OVERFLOW == 0);
+    }
+
+    fn bvs(&mut self) {
+        self.branch(self.status & CpuFlags::OVERFLOW != 0);
+    }
+
+    fn clc(&mut self) {
+        self.status &= !CpuFlags::CARRY_FLAG;
+    }
+
+    fn cld(&mut self) {
+        self.status &= !CpuFlags::DECIMAL_MODE_UNUSED;
+    }
+
+    fn cli(&mut self) {
+        self.status &= !CpuFlags::INTERRUPT_DISABLE;
+    }
+
+    fn clv(&mut self) {
+        self.status &= !CpuFlags::OVERFLOW;
+    }
+
+    fn cmp(&mut self, mode:&AddressingMode) {
         let addr = self.get_operand_address(mode);
-        self.mem_write(addr, self.register_a);
-    }
+        let operand = self.mem_read(addr);
+        // accumulator - operand
+        let accumulator = 0b00000000;
+        let res = accumulator - operand;
+        let stat_mask = res & 0b1000_0011;
+        self.status = (self.status & 0b0111_1100) | stat_mask;
 
-    //pub fn interpret(&mut self, program: Vec<u8>) {}
+    }
 
     pub fn run(&mut self) {
         let ref opcodes = *op_codes::CPU_CODES_MAP;
@@ -257,10 +328,39 @@ impl CPU {
 
                 0x90 => self.bcc(),
 
+                0xB0 => self.bcs(),
+
+                0xF0 => self.beq(),
+
+                0x24 | 0x2C => self.bit(&op_code.addressing_mode),
+
+                0x30 => self.bmi(),
+
+                0xD0 => self.bne(),
+
+                0x10 => self.bpl(),
+
+                0x50 => self.bvc(),
+
+                0x70 => self.bvs(),
+
+                0x18 => self.clc(),
+
+                0xD8 => self.cld(),
+
+                0x58 => self.cli(),
+
+                0xB8 => self.clv(),
+
+                0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 | 0xC1 | 0xD1 => {
+                    self.cmp(&op_code.addressing_mode);
+                },
+
                 0xAA => self.tax(),
 
                 0xE8 => self.inx(),
 
+                // brk force interrupt
                 0x00 => return,
 
                 _ => todo!(),
@@ -358,7 +458,7 @@ mod test {
    fn test_asl_zero_page_one_bit() {
     let mut cpu = CPU::new();
     // put 5 in register a, store in memory, use as zero page for shift
-    cpu.load_and_run(vec![0xa9, 0b0000_0001, 0x85, 0x00, 0x06, 0x00, 0x00]);
+    cpu.load_and_run(vec![0xa9, 0b0000_0001, 0x85, 0x00, 0x06, 0x00, 0xa5, 0x00, 0x00]);
     assert_eq!(cpu.register_a, 0b0000_0010);
     assert_eq!(cpu.status, 0b0000_0000);
    }
@@ -388,4 +488,10 @@ mod test {
     cpu.load_and_run(vec![0x90, 2, 0xa9, 0b0000_0001, 0x00]);
     assert_eq!(cpu.register_a, 0b0000_0000);
    }
+
+   #[test]
+   fn test_bit_sets_status() {
+
+   }
+
 }
