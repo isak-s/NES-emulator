@@ -1,6 +1,8 @@
 use crate::op_codes;
 use super::addressing_modes::AddressingMode;
 
+pub struct CpuFlags;
+impl CpuFlags {
     /// # Status Register https://www.nesdev.org/wiki/Status_flags
     ///  7 N --- Negative Flag
     ///  6 V --- Overflow Flag
@@ -10,6 +12,16 @@ use super::addressing_modes::AddressingMode;
     ///  2 I --- Interrupt Disable
     ///  1 Z --- Zero Flag
     ///  0 C --- Carry Flag
+    pub const NEGATIVE: u8 =            0b1000_0000;
+    pub const OVERFLOW: u8 =            0b0100_0000;
+    pub const NOTHING_BIT: u8 =         0b0010_0000;
+    pub const BREAK_COMMAND: u8 =       0b0001_0000;
+    pub const DECIMAL_MODE_UNUSED: u8 = 0b0000_1000;
+    pub const INTERRUPT_DISABLE: u8 =   0b0000_0100;
+    pub const ZERO_FLAG: u8 =           0b0000_0010;
+    pub const CARRY_FLAG: u8 =          0b0000_0001;
+}
+
 pub struct CPU {
     pub register_a: u8,
     pub register_x: u8,
@@ -171,9 +183,23 @@ impl CPU {
 
     fn asl(&mut self, mode: &AddressingMode) {
         // arithmetic shift left
+        if self.register_a & CpuFlags::NEGATIVE != 0 { // if bit 7 is set
+            self.status = self.status | CpuFlags::CARRY_FLAG;
+        } else {
+            self.status = self.status & CpuFlags::CARRY_FLAG.reverse_bits();
+        }
         let addr = self.get_operand_address(mode);
         let shift_amnt = self.mem_read(addr);
         self.set_register_a(self.register_a << shift_amnt);
+    }
+
+    fn asl_accumulator(&mut self) {
+        if self.register_a & CpuFlags::NEGATIVE != 0 { // if bit 7 is set
+            self.status = self.status | CpuFlags::CARRY_FLAG;
+        } else {
+            self.status = self.status & CpuFlags::CARRY_FLAG.reverse_bits();
+        }
+        self.set_register_a(self.register_a << 1);
     }
 
     fn sta(&mut self, mode: &AddressingMode) {
@@ -203,8 +229,11 @@ impl CPU {
                 0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 => {
                     self.and(&op_code.addressing_mode);
                 }
-                0x0a | 0x06 | 0x16 | 0x0e | 0x1e => {
+                0x06 | 0x16 | 0x0e | 0x1e => {
                     self.asl(&op_code.addressing_mode);
+                }
+                0x0A => {
+                    self.asl_accumulator();
                 }
 
                 0x85 => {
@@ -314,6 +343,25 @@ mod test {
     // put 5 in register a, store in memory, use as zero page for shift
     cpu.load_and_run(vec![0xa9, 0b0000_0001, 0x85, 0x00, 0x06, 0x00, 0x00]);
     assert_eq!(cpu.register_a, 0b0000_0010);
+    assert_eq!(cpu.status, 0b0000_0000);
+   }
+   #[test]
+   fn test_asl_accumulator_shifts_one_bit_left() {
+    let mut cpu = CPU::new();
+    // put 5 in register a, store in memory, use as zero page for shift
+    cpu.load_and_run(vec![0xa9, 0b0000_0001, 0x0A, 0x00]);
+    assert_eq!(cpu.register_a, 0b0000_0010);
+   }
+   #[test]
+   fn test_asl_accumulator_carry_flag_set_to_old_bit_7_from_zero_to_one() {
+    let mut cpu = CPU::new();
+    cpu.load_and_run(vec![0xa9, 0b1000_0001, 0x0A, 0x00]);
+    assert_eq!(cpu.status, CpuFlags::CARRY_FLAG);
+   }
+   #[test]
+   fn test_asl_accumulator_carry_flag_set_to_old_bit_7_from_one_to_zero() {
+    let mut cpu = CPU::new();
+    cpu.load_and_run(vec![0xa9, 0b1000_0001, 0x0A, 0x0A, 0x00]);
     assert_eq!(cpu.status, 0b0000_0000);
    }
 }
