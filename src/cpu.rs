@@ -165,18 +165,6 @@ impl CPU {
         self.update_zero_and_negative_flags(self.register_y);
     }
 
-
-    fn tax(&mut self) {
-        self.set_register_x(self.register_a);
-    }
-
-
-
-    fn sta(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
-        self.mem_write(addr, self.register_a);
-    }
-
     fn and(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let operand = self.mem_read(addr);
@@ -457,6 +445,78 @@ impl CPU {
         self.set_register_a(carry_inserted);
     }
 
+    fn rti(&mut self) {}
+
+    fn rts(&mut self) {}
+
+    fn sbc(&mut self, mode: &AddressingMode) {
+        // subtracts the contents of a memory location to the accumulator together with the not of the carry bit.
+        // clear carry bit if overflow in bit 7
+        let addr = self.get_operand_address(mode);
+        let operand = self.mem_read(addr);
+        let not_of_carry = 1 - (self.status & CpuFlags::CARRY_FLAG);
+        let sum = self.register_a as i16
+            - operand as i16
+            - not_of_carry as i16;
+
+        let carry = sum >= 0;
+        let stat_mask = if carry {CpuFlags::CARRY_FLAG} else {0b0000_0000};
+
+        self.status = (self.status & !CpuFlags::CARRY_FLAG) | stat_mask;
+        self.set_register_a(sum as u8);
+    }
+
+    fn sec(&mut self) {
+        self.status |= CpuFlags::CARRY_FLAG;
+    }
+
+    fn sed(&mut self) {
+        self.status |= CpuFlags::CARRY_FLAG;
+    }
+
+    fn sei(&mut self) {
+        self.status |= CpuFlags::INTERRUPT_DISABLE;
+    }
+
+    fn sta(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self.mem_write(addr, self.register_a);
+    }
+
+    fn stx(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self.mem_write(addr, self.register_x);
+    }
+
+    fn sty(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self.mem_write(addr, self.register_y);
+    }
+
+    fn tax(&mut self) {
+        self.set_register_x(self.register_a);
+    }
+
+    fn tay(&mut self) {
+        self.set_register_y(self.register_a);
+    }
+
+    fn tsx(&mut self) {
+
+    }
+
+    fn txa(&mut self) {
+        self.set_register_a(self.register_x);
+    }
+
+    fn txs(&mut self) {
+
+    }
+
+    fn tya(&mut self) {
+        self.set_register_a(self.register_y);
+    }
+
     pub fn run(&mut self) {
         let ref opcodes = *op_codes::CPU_CODES_MAP;
         loop {
@@ -480,7 +540,6 @@ impl CPU {
                 }
                 0x0A => self.asl_accumulator(),
 
-                0x85 => self.sta(&op_code.addressing_mode),
 
                 0x90 => self.bcc(),
 
@@ -566,7 +625,6 @@ impl CPU {
 
                 0x28 => self.plp(),
 
-                0xAA => self.tax(),
 
                 0x2A => self.rol_accumulator(),
 
@@ -577,6 +635,44 @@ impl CPU {
                 0x66 | 0x76 | 0x6E | 0x7E => {
                     self.ror(&op_code.addressing_mode);
                 }
+
+                0x40 => self.rti(),
+
+                0x60 => self.rts(),
+
+                0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 | 0xE1 | 0xF1 => {
+                    self.sbc(&op_code.addressing_mode);
+                },
+
+                0x38 => self.sec(),
+
+                0xF8 => self.sed(),
+
+                0x78 => self.sei(),
+
+                0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91 => {
+                    self.sta(&op_code.addressing_mode);
+                },
+
+                0x86 | 0x96 | 0x8E => {
+                    self.stx(&op_code.addressing_mode)
+                },
+
+                0x84 | 0x94 | 0x8C => {
+                    self.sty(&op_code.addressing_mode);
+                },
+
+                0xAA => self.tax(),
+
+                0xA8 => self.tay(),
+
+                0xBA => self.tsx(),
+
+                0x8A => self.txa(),
+
+                0x9a => self.txs(),
+
+                0x98 => self.tya(),
 
                 // fuck EA sports. Do nothing
                 0xEA => self.nop(),
