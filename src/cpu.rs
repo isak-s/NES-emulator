@@ -14,8 +14,8 @@ impl CpuFlags {
     ///  0 C --- Carry Flag
     pub const NEGATIVE: u8 =            0b1000_0000;
     pub const OVERFLOW: u8 =            0b0100_0000;
-    pub const NOTHING_BIT: u8 =         0b0010_0000;
-    pub const BREAK_COMMAND: u8 =       0b0001_0000;
+    // pub const NOTHING_BIT: u8 =         0b0010_0000;   // Completely unused
+    // pub const BREAK_COMMAND: u8 =       0b0001_0000;  // break is done with return instead
     pub const DECIMAL_MODE_UNUSED: u8 = 0b0000_1000;
     pub const INTERRUPT_DISABLE: u8 =   0b0000_0100;
     pub const ZERO_FLAG: u8 =           0b0000_0010;
@@ -29,7 +29,13 @@ pub struct CPU {
     pub status: u8,
     pub program_counter: u16,
     memory: [u8; 0x10000], // FFFF
+    // With the 6502, the stack is always on page one ($100-$1FF) and works top down.
+    stack_pointer: u8,
 }
+
+const STACK_START: u16 = 0x100;
+// Stack end is added to stack start to get the real stack end.
+const STACK_END: u8 = 0xFD;
 
 impl CPU {
     pub fn new() -> Self {
@@ -40,6 +46,7 @@ impl CPU {
             status: 0,
             program_counter: 0,
             memory: [0; 0x10000], // FFFF
+            stack_pointer: STACK_END,
         }
     }
     // should self be mut?
@@ -119,6 +126,32 @@ impl CPU {
         let lo = (data & 0xff) as u8;
         self.mem_write(pos, lo);
         self.mem_write(pos + 1, hi);
+    }
+
+    // the stack works top down
+    fn stack_push(&mut self, value: u8) {
+        self.mem_write(STACK_START + self.stack_pointer as u16, value);
+        self.stack_pointer = self.stack_pointer.wrapping_sub(1);
+    }
+
+    fn stack_pop(&mut self) -> u8 {
+        self.stack_pointer = self.stack_pointer.wrapping_add(1);
+        let stored = self.mem_read(STACK_START + self.stack_pointer as u16);
+        stored
+    }
+
+    fn stack_push_u16(&mut self, value: u16) {
+        let hi = (value >> 8) as u8;
+        let lo = (value & 0xff) as u8;
+        self.stack_push(hi);
+        self.stack_push(lo);
+    }
+
+    fn stack_pop_u16(&mut self) -> u16 {
+        let lo = self.stack_pop() as u16;
+        let hi = self.stack_pop() as u16;
+        self.stack_pointer = self.stack_pointer.wrapping_add(2); // 2 bytes
+        (hi << 8) & lo
     }
 
     pub fn reset(&mut self) {
@@ -343,7 +376,7 @@ impl CPU {
 
     fn jsr(&mut self) {
         // jump to subroutine (function). Pushes the address (minus one) of the return point to the stack.
-        // TODO!!! push return address
+        self.stack_push_u16(self.program_counter.wrapping_sub(1));
         let addr = self.get_operand_address(&AddressingMode::Absolute);
         let destination = self.mem_read_u16(addr); // u16 since this is not relative. Just address
         self.program_counter = destination;
@@ -393,15 +426,26 @@ impl CPU {
         self.set_register_a(self.register_a | mask);
     }
 
+    // With the 6502, the stack is always on page one ($100-$1FF) and works top down.
     fn pha(&mut self) {
         // push accumulator to stack
+        // decrement the stack pointer one byte
+        self.stack_push(self.register_a);
     }
 
-    fn php(&mut self) {}
+    fn php(&mut self) {
+        self.stack_push(self.status);
+    }
 
-    fn pla(&mut self) {}
+    fn pla(&mut self) {
+        let stored = self.stack_pop();
+        self.set_register_a(stored);
+    }
 
-    fn plp(&mut self) {}
+    fn plp(&mut self) {
+        let stored = self.stack_pop();
+        self.status = stored;
+    }
 
     fn rol(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
@@ -445,9 +489,16 @@ impl CPU {
         self.set_register_a(carry_inserted);
     }
 
-    fn rti(&mut self) {}
+    fn rti(&mut self) {
+        // return from interrupt. Fetch processor flags and pc
+        self.plp();
+        self.program_counter = self.stack_pop_u16();
+    }
 
-    fn rts(&mut self) {}
+    fn rts(&mut self) {
+        // return from subroutine
+        self.program_counter = self.stack_pop_u16().wrapping_sub(1);
+    }
 
     fn sbc(&mut self, mode: &AddressingMode) {
         // subtracts the contents of a memory location to the accumulator together with the not of the carry bit.
@@ -502,7 +553,8 @@ impl CPU {
     }
 
     fn tsx(&mut self) {
-
+        let val = self.stack_pop();
+        self.set_register_x(val);
     }
 
     fn txa(&mut self) {
@@ -510,7 +562,8 @@ impl CPU {
     }
 
     fn txs(&mut self) {
-
+        // transfer x to stack pointer
+        self.stack_pointer = self.register_x;
     }
 
     fn tya(&mut self) {
@@ -593,7 +646,7 @@ impl CPU {
 
                 0x4C | 0x6C => self.jmp(&op_code.addressing_mode),
 
-                0x20 => self.jsr(),  // todo
+                0x20 => self.jsr(),
 
                 0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 => {
                     self.lda(&op_code.addressing_mode);
@@ -746,8 +799,6 @@ mod test {
 
        assert_eq!(cpu.register_a, 0x55);
    }
-
-   // todo test all addressing modes for lda
 
    #[test]
    fn test_and_immediate_with_all_zeroes() {
