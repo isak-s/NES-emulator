@@ -198,6 +198,21 @@ impl CPU {
         self.update_zero_and_negative_flags(self.register_y);
     }
 
+    fn adc(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let operand = self.mem_read(addr);
+        let res: i16 = (self.register_a as i16)
+            + operand as i16
+            + (self.status & CpuFlags::CARRY_FLAG) as i16;
+
+        self.status &= 0b1111_1110; // clear carry
+        if res > 0xff {
+            self.status |= 0b0000_0001; // set carry
+        }
+
+        self.update_zero_and_negative_flags(res as u8);
+    }
+
     fn and(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let operand = self.mem_read(addr);
@@ -585,12 +600,18 @@ impl CPU {
 
             match code {
 
+                0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => {
+                    self.adc(&op_code.addressing_mode);
+                }
+
                 0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 => {
                     self.and(&op_code.addressing_mode);
                 }
+
                 0x06 | 0x16 | 0x0e | 0x1e => {
                     self.asl(&op_code.addressing_mode);
                 }
+
                 0x0A => self.asl_accumulator(),
 
 
