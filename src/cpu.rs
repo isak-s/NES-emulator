@@ -1,4 +1,4 @@
-use crate::op_codes;
+use crate::{cpu, op_codes};
 use super::addressing_modes::AddressingMode;
 
 pub struct CpuFlags;
@@ -106,11 +106,11 @@ impl CPU {
         }
     }
 
-    fn mem_read(&self, addr: u16) -> u8 {
+    pub fn mem_read(&self, addr: u16) -> u8 {
         self.memory[addr as usize]
     }
 
-    fn mem_write(&mut self, addr: u16, data: u8) {
+    pub fn mem_write(&mut self, addr: u16, data: u8) {
         self.memory[addr as usize] = data;
     }
     // the nes cpu uses little endian addressing. [lower 8 bits : higher 8 bits]
@@ -161,9 +161,15 @@ impl CPU {
 
         self.program_counter = self.mem_read_u16(0xFFFC)
     }
+    // this is the nes version:
+//    pub fn load(&mut self, program: Vec<u8>) {
+        //self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);  // load the entire program after 0x8000
+        //self.mem_write_u16(0xFFFC, 0x8000); // save a reference to the start of the code in 0xffc
+    //}
+
     pub fn load(&mut self, program: Vec<u8>) {
-        self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);  // load the entire program after 0x8000
-        self.mem_write_u16(0xFFFC, 0x8000); // save a reference to the start of the code in 0xffc
+        self.memory[0x0600..(0x0600 + program.len())].copy_from_slice(&program[..]);
+        self.mem_write_u16(0xFFFC, 0x0600);
     }
 
     pub fn load_and_run(&mut self, program: Vec<u8>) {
@@ -586,8 +592,17 @@ impl CPU {
     }
 
     pub fn run(&mut self) {
+        self.run_with_callback(|_| {});
+    }
+
+    pub fn run_with_callback<F>(&mut self, mut callback: F)
+    where F: FnMut(&mut CPU), {
         let ref opcodes = *op_codes::CPU_CODES_MAP;
+
         loop {
+
+            callback(self);
+
             let code = self.memory[self.program_counter as usize];
 
             let op_code = opcodes
