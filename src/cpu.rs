@@ -1,4 +1,4 @@
-use crate::{cpu, op_codes};
+use crate::{op_codes};
 use super::addressing_modes::AddressingMode;
 
 pub struct CpuFlags;
@@ -28,7 +28,7 @@ pub struct CPU {
     pub register_y: u8,
     pub status: u8,
     pub program_counter: u16,
-    memory: [u8; 0x10000], // FFFF
+    memory: [u8; 0xFFFF], // FFFF
     // With the 6502, the stack is always on page one ($100-$1FF) and works top down.
     stack_pointer: u8,
 }
@@ -36,6 +36,8 @@ pub struct CPU {
 const STACK_START: u16 = 0x100;
 // Stack end is added to stack start to get the real stack end.
 const STACK_END: u8 = 0xFD;
+
+const PROGRAM_START: u16 = 0x600;
 
 impl CPU {
     pub fn new() -> Self {
@@ -45,7 +47,7 @@ impl CPU {
             register_y: 0,
             status: 0,
             program_counter: 0,
-            memory: [0; 0x10000], // FFFF
+            memory: [0; 0xFFFF], // FFFF
             stack_pointer: STACK_END,
         }
     }
@@ -130,13 +132,13 @@ impl CPU {
 
     // the stack works top down
     fn stack_push(&mut self, value: u8) {
-        self.mem_write(STACK_START + self.stack_pointer as u16, value);
+        self.mem_write((STACK_START as u16) + self.stack_pointer as u16, value);
         self.stack_pointer = self.stack_pointer.wrapping_sub(1);
     }
 
     fn stack_pop(&mut self) -> u8 {
         self.stack_pointer = self.stack_pointer.wrapping_add(1);
-        let stored = self.mem_read(STACK_START + self.stack_pointer as u16);
+        let stored = self.mem_read((STACK_START as u16) + self.stack_pointer as u16);
         stored
     }
 
@@ -150,8 +152,7 @@ impl CPU {
     fn stack_pop_u16(&mut self) -> u16 {
         let lo = self.stack_pop() as u16;
         let hi = self.stack_pop() as u16;
-        self.stack_pointer = self.stack_pointer.wrapping_add(2); // 2 bytes
-        (hi << 8) & lo
+        (hi << 8) | lo
     }
 
     pub fn reset(&mut self) {
@@ -169,7 +170,7 @@ impl CPU {
 
     pub fn load(&mut self, program: Vec<u8>) {
         self.memory[0x0600..(0x0600 + program.len())].copy_from_slice(&program[..]);
-        self.mem_write_u16(0xFFFC, 0x0600);
+        self.mem_write_u16(0xFFFC, 0x600);//0x0600);
     }
 
     pub fn load_and_run(&mut self, program: Vec<u8>) {
@@ -396,12 +397,23 @@ impl CPU {
     }
 
     fn jsr(&mut self) {
-        // jump to subroutine (function). Pushes the address (minus one) of the return point to the stack.
-        self.stack_push_u16(self.program_counter.wrapping_sub(1));
-        let addr = self.get_operand_address(&AddressingMode::Absolute);
-        let destination = self.mem_read_u16(addr); // u16 since this is not relative. Just address
+        println!("          JSR: pc before operand = {:04X}", self.program_counter);
+
+        self.stack_push_u16(self.program_counter);
+
+        let destination = self.get_operand_address(&AddressingMode::Absolute);
+
         self.program_counter = destination;
+
+        println!("          JSR: pc after = {:04X}", self.program_counter);
     }
+//    fn jsr(&mut self) {
+        //// jump to subroutine (function). Pushes the address (minus one) of the return point to the stack.
+        //self.stack_push_u16(self.program_counter); // .wrapping_add(2).wrapping_sub(1));
+        //let addr = self.get_operand_address(&AddressingMode::Absolute);
+        //let destination = self.mem_read_u16(addr); // u16 since this is not relative. Just address
+        //self.program_counter = destination;
+    //}
 
     fn lda(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
@@ -518,7 +530,11 @@ impl CPU {
 
     fn rts(&mut self) {
         // return from subroutine
-        self.program_counter = self.stack_pop_u16().wrapping_sub(1);
+        let mut popped = self.stack_pop_u16().wrapping_add(1);
+        println!("        popped {:04X?}", popped);
+        self.program_counter = popped.wrapping_add(1);
+        //popped = self.stack_pop_u16();
+        // println!("popped {:04X?}", popped);
     }
 
     fn sbc(&mut self, mode: &AddressingMode) {
@@ -609,7 +625,9 @@ impl CPU {
                 .get(&code)
                 .expect(&format!("Opcode {:x} not recognized!", code));
 
+            println!("pc is at {:X?}", self.program_counter as u16);
             println!("running inst {} with opcode {:x}", &op_code.name, code);
+
             self.program_counter += 1;
             let pc_state_before_inst_execution = self.program_counter;
 
@@ -771,11 +789,9 @@ impl CPU {
 
                 _ => todo!(),
             }
-            println!("{}", self.program_counter);
             if pc_state_before_inst_execution == self.program_counter {
                 self.program_counter += (op_code.bytes - 1) as u16
             }
-            println!("{}", self.program_counter);
         }
     }
 }
@@ -894,8 +910,45 @@ mod test {
    }
 
    #[test]
-   fn test_bit_sets_status() {
+   fn test_jsr_sets_correct_pc_address() {
+    let mut cpu = CPU::new();
+    //cpu.load_and_run(vec![0x20, 2, 0x02, 0x00]);
+    //assert_eq!(PROGRAM_START, cpu.program_counter);
 
+    //let mut cpu = CPU::new();
+    cpu.load_and_run(vec![0x20, 1, 0]);
+
+    assert_eq!(cpu.program_counter, 2);
+   }
+
+   #[test]
+   fn test_jsr_puts_return_address_on_stack() {
+    let mut cpu = CPU::new();
+    cpu.load(vec![0x20, 0b0000_0000, 0b_1000_0000]);
+    let before_jsr = cpu.program_counter;
+    cpu.run();
+    let r = cpu.stack_pop_u16();
+    assert_eq!(before_jsr, r);
+   }
+
+   #[test]
+   fn test_push_to_stack_then_pop() {
+    let mut cpu = CPU::new();
+    cpu.reset();
+
+    cpu.stack_push(69);
+
+    assert_eq!(69, cpu.stack_pop());
+   }
+
+   #[test]
+   fn test_push_u16_to_stack_then_pop() {
+    let mut cpu = CPU::new();
+    cpu.reset();
+
+    cpu.stack_push_u16(69);
+
+    assert_eq!(69, cpu.stack_pop_u16());
    }
 
 }

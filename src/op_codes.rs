@@ -221,6 +221,8 @@ lazy_static!(
     OpCode::new(0x08, "PHP", 1, 3, AddressingMode::NoneAddressing),
     OpCode::new(0x28, "PLP", 1, 4, AddressingMode::NoneAddressing),
     // END STACK
+
+    OpCode::new(0xEA, "EA", 1, 1, AddressingMode::NoneAddressing),
     ];
 
     pub static ref CPU_CODES_MAP: HashMap<u8, &'static OpCode> = {

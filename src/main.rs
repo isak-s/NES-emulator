@@ -10,7 +10,6 @@ use sdl2::EventPump;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::pixels::PixelFormatEnum;
-use sdl2::video::FullscreenType::True;
 
 
 fn handle_user_input(cpu: &mut CPU, event_pump: &mut EventPump) {
