@@ -96,7 +96,7 @@ impl CPU {
                 let base = self.mem_read(self.program_counter);
                 let lo = self.mem_read(base as u16);
                 let hi = self.mem_read(base.wrapping_add(1) as u16);
-                let deref_base = (hi as u16) | (lo as u16);
+                let deref_base = (hi as u16) << 8 | lo as u16;
                 let deref = deref_base.wrapping_add(self.register_y as u16);
                 deref
             }
@@ -132,6 +132,7 @@ impl CPU {
 
     // the stack works top down
     fn stack_push(&mut self, value: u8) {
+        println!("                  PUSHING {:2X?} to 0x{:4X?}", value, STACK_START + self.stack_pointer as u16);
         self.mem_write((STACK_START as u16) + self.stack_pointer as u16, value);
         self.stack_pointer = self.stack_pointer.wrapping_sub(1);
     }
@@ -139,6 +140,7 @@ impl CPU {
     fn stack_pop(&mut self) -> u8 {
         self.stack_pointer = self.stack_pointer.wrapping_add(1);
         let stored = self.mem_read((STACK_START as u16) + self.stack_pointer as u16);
+        println!("                  POPPING {:2X?} from 0x{:4X?}", stored, STACK_START + self.stack_pointer as u16);
         stored
     }
 
@@ -147,11 +149,14 @@ impl CPU {
         let lo = (value & 0xff) as u8;
         self.stack_push(hi);
         self.stack_push(lo);
+
+        println!("                  AS {:4X?}", value);
     }
 
     fn stack_pop_u16(&mut self) -> u16 {
         let lo = self.stack_pop() as u16;
         let hi = self.stack_pop() as u16;
+        println!("                  AS {:4X?}", (hi << 8) | lo);
         (hi << 8) | lo
     }
 
@@ -256,8 +261,8 @@ impl CPU {
             // relative can be both pos and neg. Treat as signed!!!
             let relative = self.mem_read(self.program_counter) as i8;
             let jump_addr = self.program_counter
-                .wrapping_add(1)
-                .wrapping_add(relative as u16);
+                .wrapping_add(1) // one or two?
+                .wrapping_add(relative as u16);  // why u16???
             self.program_counter = jump_addr;
         }
     }
@@ -280,10 +285,12 @@ impl CPU {
 
         let res = self.register_a & operand;
         if res == 0 {
+            self.status |= CpuFlags::ZERO_FLAG;
+        } else {
             self.status &= CpuFlags::ZERO_FLAG;
         }
         // negative and overflow bits
-        let stat_mask = res & 0b1100_0000;
+        let stat_mask = operand & 0b1100_0000; // why not from res?
         self.status = (self.status & 0b0011_1111) | stat_mask
     }
 
@@ -328,7 +335,7 @@ impl CPU {
         let addr = self.get_operand_address(mode);
         let operand = self.mem_read(addr);
         // accumulator - operand
-        let res = register - operand;
+        let res = register.wrapping_sub(operand);
         let stat_mask = res & 0b1000_0011;
         self.status = (self.status & 0b0111_1100) | stat_mask;
     }
@@ -525,14 +532,14 @@ impl CPU {
     fn rti(&mut self) {
         // return from interrupt. Fetch processor flags and pc
         self.plp();
-        self.program_counter = self.stack_pop_u16();
+        self.program_counter = self.stack_pop_u16().wrapping_add(2);
     }
 
     fn rts(&mut self) {
         // return from subroutine
-        let mut popped = self.stack_pop_u16().wrapping_add(1);
-        println!("        popped {:04X?}", popped);
-        self.program_counter = popped.wrapping_add(1);
+        let mut popped = self.stack_pop_u16().wrapping_add(2);
+        println!("        popped plus 2 is {:04X?}", popped);
+        self.program_counter = popped;
         //popped = self.stack_pop_u16();
         // println!("popped {:04X?}", popped);
     }
