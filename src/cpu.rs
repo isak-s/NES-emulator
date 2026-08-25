@@ -186,14 +186,14 @@ impl CPU {
 
     fn update_zero_and_negative_flags(&mut self, result: u8) {
         if result == 0 {
-            self.status = self.status | 0b0000_0010;
+            self.status |= CpuFlags::ZERO_FLAG;
         } else {
-            self.status = self.status & 0b1111_1101;
+            self.status &= !CpuFlags::ZERO_FLAG;
         }
         if result & 0b1000_0000 != 0 {
-            self.status = self.status | 0b1000_0000;
+            self.status |= CpuFlags::NEGATIVE;
         } else {
-            self.status = self.status & 0b0111_1111;
+            self.status &= !CpuFlags::NEGATIVE;
         }
     }
 
@@ -210,19 +210,31 @@ impl CPU {
         self.update_zero_and_negative_flags(self.register_y);
     }
 
-    fn adc(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
-        let operand = self.mem_read(addr);
-        let res: i16 = (self.register_a as i16)
+    fn _adc(&mut self, operand: i16) {
+        let sum: i16 = (self.register_a as i16)
             + operand as i16
             + (self.status & CpuFlags::CARRY_FLAG) as i16;
 
-        self.status &= 0b1111_1110; // clear carry
-        if res > 0xff {
-            self.status |= 0b0000_0001; // set carry
+        // carry check
+        self.status &= !CpuFlags::CARRY_FLAG; // clear carry
+        if sum > 0xff {
+            self.status |= CpuFlags::CARRY_FLAG; // set carry
+        }
+
+        let res = sum as u8;
+        // overflow check
+        self.status &= !CpuFlags::OVERFLOW;
+        if (operand as u8 ^ res) & (res ^ self.register_a) & 0x80 != 0 {
+            self.status |= CpuFlags::OVERFLOW;
         }
 
         self.set_register_a(res as u8);
+    }
+
+    fn adc(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let operand = self.mem_read(addr);
+        self._adc(operand as i16);
     }
 
     fn and(&mut self, mode: &AddressingMode) {
@@ -553,16 +565,7 @@ impl CPU {
         // clear carry bit if overflow in bit 7
         let addr = self.get_operand_address(mode);
         let operand = self.mem_read(addr);
-        let not_of_carry = 1 - (self.status & CpuFlags::CARRY_FLAG);
-        let sum = self.register_a as i16
-            - operand as i16
-            - not_of_carry as i16;
-
-        let carry = sum >= 0;
-        let stat_mask = if carry {CpuFlags::CARRY_FLAG} else {0b0000_0000};
-
-        self.status = (self.status & !CpuFlags::CARRY_FLAG) | stat_mask;
-        self.set_register_a(sum as u8);
+        self._adc((operand as i16).wrapping_neg().wrapping_sub(1));
     }
 
     fn sec(&mut self) {
@@ -961,4 +964,42 @@ mod test {
     assert_eq!(69, cpu.stack_pop_u16());
    }
 
+   #[test]
+   fn test_adc_with_overflow() {
+    let mut cpu = CPU::new();
+    cpu.reset();
+    cpu.register_a = 100;
+    let operand = 50;
+    cpu._adc(operand);
+    assert_eq!(cpu.status, CpuFlags::OVERFLOW | CpuFlags::NEGATIVE,
+            "status is {:#b}, wanted is {:#b}",
+            cpu.status,
+            CpuFlags::OVERFLOW | CpuFlags::NEGATIVE);
+   }
+
+   #[test]
+   fn test_adc_with_carry() {
+    let mut cpu = CPU::new();
+    cpu.reset();
+    cpu.register_a = 200;
+    let operand = 100;
+    cpu._adc(operand);
+    assert_eq!(cpu.status, CpuFlags::CARRY_FLAG,
+            "status is {:#b}, wanted is {:#b}",
+            cpu.status,
+            CpuFlags::CARRY_FLAG);
+    }
+
+    #[test]
+    fn test_adc_with_overflow_and_carry() {
+        let mut cpu = CPU::new();
+        cpu.reset();
+        cpu.register_a = 145;
+        let operand = 145;
+        cpu._adc(operand);
+        assert_eq!(cpu.status, CpuFlags::CARRY_FLAG | CpuFlags::OVERFLOW,
+            "status is {:#b}, wanted is {:#b}",
+            cpu.status,
+            CpuFlags::CARRY_FLAG | CpuFlags::OVERFLOW);
+    }
 }
