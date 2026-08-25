@@ -222,7 +222,7 @@ impl CPU {
             self.status |= 0b0000_0001; // set carry
         }
 
-        self.update_zero_and_negative_flags(res as u8);
+        self.set_register_a(res as u8);
     }
 
     fn and(&mut self, mode: &AddressingMode) {
@@ -287,7 +287,7 @@ impl CPU {
         if res == 0 {
             self.status |= CpuFlags::ZERO_FLAG;
         } else {
-            self.status &= CpuFlags::ZERO_FLAG;
+            self.status &= !CpuFlags::ZERO_FLAG;
         }
         // negative and overflow bits
         let stat_mask = operand & 0b1100_0000; // why not from res?
@@ -447,7 +447,9 @@ impl CPU {
         let stat_mask = value & CpuFlags::CARRY_FLAG;
         self.status = (self.status & !CpuFlags::CARRY_FLAG) | stat_mask;
 
-        self.mem_write(addr, value >> 1);
+        let res = value >> 1;
+        self.mem_write(addr, res);
+        self.update_zero_and_negative_flags(res);
     }
 
     fn lsr_accumulator(&mut self) {
@@ -496,6 +498,7 @@ impl CPU {
         let carry_inserted = shifted | (self.status & CpuFlags::CARRY_FLAG);
 
         self.mem_write(addr, carry_inserted);
+        self.update_zero_and_negative_flags(carry_inserted);
         self.status = (self.status & !CpuFlags::CARRY_FLAG) | (bit_7 >> 7)
     }
 
@@ -516,8 +519,9 @@ impl CPU {
         let shifted = operand >> 1;
         let carry_inserted = shifted | ((self.status & CpuFlags::CARRY_FLAG) << 7);
 
-        self.status = (self.status & !CpuFlags::CARRY_FLAG) | bit_0;
         self.mem_write(addr, carry_inserted);
+        self.update_zero_and_negative_flags(carry_inserted);
+        self.status = (self.status & !CpuFlags::CARRY_FLAG) | bit_0;
     }
 
     fn ror_accumulator(&mut self) {
@@ -566,7 +570,7 @@ impl CPU {
     }
 
     fn sed(&mut self) {
-        self.status |= CpuFlags::CARRY_FLAG;
+        self.status |= CpuFlags::DECIMAL_MODE_UNUSED;
     }
 
     fn sei(&mut self) {
@@ -597,8 +601,7 @@ impl CPU {
     }
 
     fn tsx(&mut self) {
-        let val = self.stack_pop();
-        self.set_register_x(val);
+        self.set_register_x(self.stack_pointer);
     }
 
     fn txa(&mut self) {
