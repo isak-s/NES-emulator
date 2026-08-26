@@ -28,7 +28,7 @@ pub struct CPU {
     pub register_y: u8,
     pub status: u8,
     pub program_counter: u16,
-    memory: [u8; 0xFFFF], // FFFF
+    memory: [u8; 0x10000], // FFFF
     // With the 6502, the stack is always on page one ($100-$1FF) and works top down.
     stack_pointer: u8,
 }
@@ -47,7 +47,7 @@ impl CPU {
             register_y: 0,
             status: 0,
             program_counter: 0,
-            memory: [0; 0xFFFF], // FFFF
+            memory: [0; 0x10000], // FFFF
             stack_pointer: STACK_END,
         }
     }
@@ -348,8 +348,12 @@ impl CPU {
         let operand = self.mem_read(addr);
         // accumulator - operand
         let res = register.wrapping_sub(operand);
-        let stat_mask = res & 0b1000_0011;
-        self.status = (self.status & 0b0111_1100) | stat_mask;
+
+        self.status &= !CpuFlags::CARRY_FLAG; // clear carry flag
+        if operand > register {
+            self.status |= CpuFlags::CARRY_FLAG;
+        }
+        self.update_zero_and_negative_flags(res);
     }
 
     fn cmp(&mut self, mode:&AddressingMode) {
@@ -409,16 +413,21 @@ impl CPU {
 
     fn jmp(&mut self, mode: &AddressingMode) {
         // An original 6502 has does not correctly fetch the target address if the indirect vector falls on a page boundary
-        // this bug is not recreated
         let addr = self.get_operand_address(mode);
-        let destination = self.mem_read_u16(addr); // u16 since this is not relative. Just address
-        self.program_counter = destination;
+
+        let lo = self.mem_read(addr);
+        let hi_addr = if addr & 0x00FF == 0x00FF {
+            addr & 0xFF00
+        } else {addr + 1};
+        let hi = self.mem_read(hi_addr);
+
+        self.program_counter = ((hi as u16) << 8) | lo as u16;
     }
 
     fn jsr(&mut self) {
         println!("          JSR: pc before operand = {:04X}", self.program_counter);
 
-        self.stack_push_u16(self.program_counter);
+        self.stack_push_u16(self.program_counter.wrapping_add(1));
 
         let destination = self.get_operand_address(&AddressingMode::Absolute);
 
@@ -488,7 +497,7 @@ impl CPU {
     }
 
     fn php(&mut self) {
-        self.stack_push(self.status);
+        self.stack_push(self.status | 0b0011_0000);
     }
 
     fn pla(&mut self) {
@@ -548,24 +557,44 @@ impl CPU {
     fn rti(&mut self) {
         // return from interrupt. Fetch processor flags and pc
         self.plp();
-        self.program_counter = self.stack_pop_u16().wrapping_add(2);
+        self.program_counter = self.stack_pop_u16();
     }
 
     fn rts(&mut self) {
         // return from subroutine
-        let mut popped = self.stack_pop_u16().wrapping_add(2);
-        println!("        popped plus 2 is {:04X?}", popped);
+        let popped = self.stack_pop_u16().wrapping_add(1);
+        println!("        popped is {:04X?}", popped);
         self.program_counter = popped;
         //popped = self.stack_pop_u16();
         // println!("popped {:04X?}", popped);
     }
 
     fn sbc(&mut self, mode: &AddressingMode) {
-        // subtracts the contents of a memory location to the accumulator together with the not of the carry bit.
-        // clear carry bit if overflow in bit 7
         let addr = self.get_operand_address(mode);
         let operand = self.mem_read(addr);
-        self._adc((operand as i16).wrapping_neg().wrapping_sub(1));
+
+        let carry = self.status & CpuFlags::CARRY_FLAG;
+        let value = operand ^ 0xFF;
+
+        let sum = self.register_a as u16
+            + value as u16
+            + carry as u16;
+
+        let result = sum as u8;
+
+        if sum > 0xFF {
+            self.status |= CpuFlags::CARRY_FLAG;
+        } else {
+            self.status &= !CpuFlags::CARRY_FLAG;
+        }
+
+        if ((self.register_a ^ result) & (self.register_a ^ operand) & 0x80) != 0 {
+            self.status |= CpuFlags::OVERFLOW;
+        } else {
+            self.status &= !CpuFlags::OVERFLOW;
+        }
+
+        self.set_register_a(result);
     }
 
     fn sec(&mut self) {
