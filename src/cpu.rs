@@ -14,8 +14,8 @@ impl CpuFlags {
     ///  0 C --- Carry Flag
     pub const NEGATIVE: u8 =            0b1000_0000;
     pub const OVERFLOW: u8 =            0b0100_0000;
-    // pub const NOTHING_BIT: u8 =         0b0010_0000;   // Completely unused
-    // pub const BREAK_COMMAND: u8 =       0b0001_0000;  // break is done with return instead
+    pub const NOTHING_BIT: u8 =         0b0010_0000;   // Completely unused
+    pub const BREAK_COMMAND: u8 =       0b0001_0000;  // break is done with return instead
     pub const DECIMAL_MODE_UNUSED: u8 = 0b0000_1000;
     pub const INTERRUPT_DISABLE: u8 =   0b0000_0100;
     pub const ZERO_FLAG: u8 =           0b0000_0010;
@@ -119,7 +119,7 @@ impl CPU {
     // make self mut later
     fn mem_read_u16(&self, pos: u16) -> u16 {
         let lo = self.mem_read(pos) as u16;
-        let hi = self.mem_read(pos + 1) as u16;
+        let hi = self.mem_read(pos.wrapping_add(1)) as u16;
         (hi << 8) | lo
     }
 
@@ -164,6 +164,7 @@ impl CPU {
         self.register_a = 0;
         self.register_x = 0;
         self.status = 0;
+        self.stack_pointer = STACK_END;
 
         self.program_counter = self.mem_read_u16(0xFFFC)
     }
@@ -350,7 +351,7 @@ impl CPU {
         let res = register.wrapping_sub(operand);
 
         self.status &= !CpuFlags::CARRY_FLAG; // clear carry flag
-        if operand > register {
+        if register >= operand {
             self.status |= CpuFlags::CARRY_FLAG;
         }
         self.update_zero_and_negative_flags(res);
@@ -411,7 +412,7 @@ impl CPU {
         self.set_register_y(self.register_y.wrapping_add(1));
     }
 
-    fn jmp(&mut self, mode: &AddressingMode) {
+    fn jmp_absolute_with_bug(&mut self, mode: &AddressingMode) {
         // An original 6502 has does not correctly fetch the target address if the indirect vector falls on a page boundary
         let addr = self.get_operand_address(mode);
 
@@ -507,7 +508,7 @@ impl CPU {
 
     fn plp(&mut self) {
         let stored = self.stack_pop();
-        self.status = stored;
+        self.status = (stored & !CpuFlags::BREAK_COMMAND) | CpuFlags::NOTHING_BIT;
     }
 
     fn rol(&mut self, mode: &AddressingMode) {
@@ -740,7 +741,12 @@ impl CPU {
 
                 0xC8 => self.iny(),
 
-                0x4C | 0x6C => self.jmp(&op_code.addressing_mode),
+                0x4C => {
+                    let mem_address = self.mem_read_u16(self.program_counter);
+                    self.program_counter = mem_address;
+                },
+
+                0x6C => self.jmp_absolute_with_bug(&op_code.addressing_mode),
 
                 0x20 => self.jsr(),
 

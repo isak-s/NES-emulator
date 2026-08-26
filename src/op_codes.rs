@@ -86,8 +86,6 @@ lazy_static!(
     // End Stores
 
     // BEGIN Arithmetic
-    OpCode::new(0xE8, "INX", 1, 2, AddressingMode::NoneAddressing),
-
     OpCode::new(0x29, "AND", 2, 2, AddressingMode::Immediate),
     OpCode::new(0x25, "AND", 2, 3, AddressingMode::ZeroPage),
     OpCode::new(0x35, "AND", 2, 4, AddressingMode::ZeroPage_X),
@@ -213,7 +211,7 @@ lazy_static!(
     // END FLAG CLEARS
 
     OpCode::new(0x24, "BIT", 2, 3, AddressingMode::ZeroPage),
-    OpCode::new(0x24, "BIT", 3, 4, AddressingMode::Absolute),
+    OpCode::new(0x2C, "BIT", 3, 4, AddressingMode::Absolute),
 
     // BEGIN STACK
     OpCode::new(0x48, "PHA", 1, 3, AddressingMode::NoneAddressing),
@@ -222,7 +220,7 @@ lazy_static!(
     OpCode::new(0x28, "PLP", 1, 4, AddressingMode::NoneAddressing),
     // END STACK
 
-    OpCode::new(0xEA, "EA", 1, 1, AddressingMode::NoneAddressing),
+    OpCode::new(0xEA, "EA", 1, 2, AddressingMode::NoneAddressing),
     ];
 
     pub static ref CPU_CODES_MAP: HashMap<u8, &'static OpCode> = {

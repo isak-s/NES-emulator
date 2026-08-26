@@ -134,6 +134,7 @@ fn main() {
 
         if read_screen_state(cpu, &mut screen_state) {
             texture.update(None, &screen_state, 32 * 3).unwrap();
+            canvas.copy(&texture, None, None).unwrap();
             canvas.present();
         }
         std::thread::sleep(std::time::Duration::new(0, 70_000));
