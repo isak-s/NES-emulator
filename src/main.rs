@@ -1,6 +1,8 @@
 mod cpu;
 mod addressing_modes;
 mod op_codes;
+mod bus;
+mod mem;
 
 use cpu::CPU;
 
@@ -10,6 +12,8 @@ use sdl2::EventPump;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::pixels::PixelFormatEnum;
+
+use crate::mem::Mem;
 
 
 fn handle_user_input(cpu: &mut CPU, event_pump: &mut EventPump) {

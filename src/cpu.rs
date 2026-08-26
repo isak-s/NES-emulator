@@ -1,4 +1,4 @@
-use crate::{op_codes};
+use crate::{bus::Bus, mem::Mem, op_codes};
 use super::addressing_modes::AddressingMode;
 
 pub struct CpuFlags;
@@ -28,9 +28,9 @@ pub struct CPU {
     pub register_y: u8,
     pub status: u8,
     pub program_counter: u16,
-    memory: [u8; 0x10000], // FFFF
     // With the 6502, the stack is always on page one ($100-$1FF) and works top down.
     stack_pointer: u8,
+    pub bus: Bus,
 }
 
 const STACK_START: u16 = 0x100;
@@ -38,6 +38,24 @@ const STACK_START: u16 = 0x100;
 const STACK_END: u8 = 0xFD;
 
 const PROGRAM_START: u16 = 0x600;
+
+impl Mem for CPU {
+    fn mem_read(&self, addr: u16) -> u8 {
+        self.bus.mem_read(addr)
+    }
+
+    fn mem_write(&mut self, addr: u16, data: u8) {
+        self.bus.mem_write(addr, data);
+    }
+
+    fn mem_read_u16(&self, pos: u16) -> u16 {
+        self.bus.mem_read_u16(pos)
+    }
+
+    fn mem_write_u16(&mut self, pos: u16, data: u16) {
+        self.bus.mem_write_u16(pos, data);
+    }
+}
 
 impl CPU {
     pub fn new() -> Self {
@@ -47,8 +65,8 @@ impl CPU {
             register_y: 0,
             status: 0,
             program_counter: 0,
-            memory: [0; 0x10000], // FFFF
             stack_pointer: STACK_END,
+            bus: Bus::new(),
         }
     }
     // should self be mut?
@@ -108,28 +126,6 @@ impl CPU {
         }
     }
 
-    pub fn mem_read(&self, addr: u16) -> u8 {
-        self.memory[addr as usize]
-    }
-
-    pub fn mem_write(&mut self, addr: u16, data: u8) {
-        self.memory[addr as usize] = data;
-    }
-    // the nes cpu uses little endian addressing. [lower 8 bits : higher 8 bits]
-    // make self mut later
-    fn mem_read_u16(&self, pos: u16) -> u16 {
-        let lo = self.mem_read(pos) as u16;
-        let hi = self.mem_read(pos.wrapping_add(1)) as u16;
-        (hi << 8) | lo
-    }
-
-    fn mem_write_u16(&mut self, pos: u16, data: u16) {
-        let hi = (data >> 8) as u8;
-        let lo = (data & 0xff) as u8;
-        self.mem_write(pos, lo);
-        self.mem_write(pos + 1, hi);
-    }
-
     // the stack works top down
     fn stack_push(&mut self, value: u8) {
         println!("                  PUSHING {:2X?} to 0x{:4X?}", value, STACK_START + self.stack_pointer as u16);
@@ -175,7 +171,9 @@ impl CPU {
     //}
 
     pub fn load(&mut self, program: Vec<u8>) {
-        self.memory[0x0600..(0x0600 + program.len())].copy_from_slice(&program[..]);
+        for i in 0..(program.len() as u16) {
+            self.mem_write(0x0000 + i, program[i as usize]);
+        }
         self.mem_write_u16(0xFFFC, 0x600);//0x0600);
     }
 
@@ -662,7 +660,7 @@ impl CPU {
 
             callback(self);
 
-            let code = self.memory[self.program_counter as usize];
+            let code = self.mem_read(self.program_counter);
 
             let op_code = opcodes
                 .get(&code)
